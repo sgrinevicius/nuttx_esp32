@@ -588,6 +588,8 @@ config SENSORS_BMP180_UORB
 
 endif # SENSORS_BMP180
 
+
+
 config SENSORS_BMP280
 	bool "Bosch BMP280 Barometric Pressure Sensor"
 	default n
@@ -595,7 +597,72 @@ config SENSORS_BMP280
 	---help---
 		Enable driver for the Bosch BMP280 barometric pressure sensor.
 
+#if SENSORS_BMP280
+
+#choice
+#	prompt "I2C Address"
+#	default BMP280_I2C_ADDR_76
+
+#config BMP280_I2C_ADDR_76
+#	bool "0x76"
+#	---help---
+#		Default address.
+#		If SDO pin is pulled to GND, use 0x76
+
+#config BMP280_I2C_ADDR_77
+#	bool "0x77"
+#	---help---
+#		If SDO pin is pulled to VDDIO, use 0x77
+
+#endchoice # I2C Address
+
+#config BMP280_I2C_FREQUENCY
+#	int "BMP280 I2C frequency"
+#	default 400000
+
+#endif # SENSORS_BMP280
+
+#----------------------------------------------------------------------------------------- Seleção de Driver para BMP280 
+
 if SENSORS_BMP280
+
+choice
+	prompt "BMP280 Driver Interface"
+	default SENSORS_BMP280_PULL
+
+config SENSORS_BMP280_PULL
+	bool "BMP280 PULL Interface (official)"
+	---help---
+		Enables the official BMP280 uORB driver, which uses the PULL model
+		(fetch). This is the driver shipped with NuttX, which carries the
+		'_uorb' suffix but does not publish events spontaneously.
+
+		The upper half forwards 'read()' calls to the lower half 'fetch()'.
+		Data is only delivered when an application explicitly reads the
+		device node.
+
+config SENSORS_BMP280_FULL
+	bool "BMP280 FULL uORB Interface (push)"
+	---help---
+		Enables the BMP280 FULL uORB driver, which uses the PUSH model.
+		The driver schedules a worker on the HPWORK queue and publishes
+		data spontaneously via 'push_event'. Subscribers receive events
+		without calling 'read()'.
+
+config SENSORS_BMP280_HYBRID
+	bool "BMP280 Hybrid uORB Interface"
+	---help---
+		Enables the BMP280 hybrid uORB driver, which supports both PUSH
+		and PULL models. The behavior is selected at compile time by
+		CONFIG_SENSORS_BMP280_POLL:
+
+		  - With CONFIG_SENSORS_BMP280_POLL enabled: PUSH model, using a
+		    dedicated kthread to publish events via 'push_event'.
+
+		  - Without CONFIG_SENSORS_BMP280_POLL: PULL model, using 'fetch'
+		    and waiting for on-demand reads.
+
+endchoice # BMP280 Driver Interface
 
 choice
 	prompt "I2C Address"
@@ -618,7 +685,41 @@ config BMP280_I2C_FREQUENCY
 	int "BMP280 I2C frequency"
 	default 400000
 
+if SENSORS_BMP280_HYBRID
+
+config SENSORS_BMP280_POLL
+	bool "Enable BMP280 polling mode (push)"
+	default n
+	---help---
+		When enabled, the hybrid driver runs in PUSH mode: a dedicated
+		kernel thread reads the sensor at the interval defined by
+		CONFIG_SENSORS_BMP280_POLL_INTERVAL and publishes events via
+		'push_event'.
+
+		When disabled, the hybrid driver runs in PULL mode: it exposes
+		'fetch' and waits for on-demand reads by the upper half.
+
+config SENSORS_BMP280_POLL_INTERVAL
+	int "Polling interval (microseconds)"
+	default 1000000
+	range 0 4294967295
+	depends on SENSORS_BMP280_POLL
+	---help---
+		Interval between sensor measurements when running in PUSH mode.
+
+config SENSORS_BMP280_THREAD_STACKSIZE
+	int "Worker thread stack size"
+	default 2048
+	depends on SENSORS_BMP280_POLL
+	---help---
+		Stack size for the worker thread used by the hybrid driver in
+		PUSH mode.
+
+endif # SENSORS_BMP280_HYBRID
+
 endif # SENSORS_BMP280
+
+#-----------------------------------------------------------------------------------------------------------------------
 
 config SENSORS_BME680
 	bool "Bosch BME680 Temperature, Gas, Humidity and Pressure Sensor"
